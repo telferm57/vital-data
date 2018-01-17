@@ -9,7 +9,9 @@ import imp
 #imp.reload(vs)
 import pandas as pd
 import numpy as np
-import filehandler as fh
+#from vitalanalysis import fh # fh aliased to filehandler in __init__ 
+#from vitalanalysis import vs # vs aliased to filehandler in __init__ 
+#from vitalanalysis import vu # vu aliased to filehandler in __init__ 
 from scipy.signal import medfilt
 def getADLwalk(walkdf,walkno,basedir,subdir,subject,samplerate=50):
     #walkno = 47
@@ -58,13 +60,14 @@ def getVectorsBase(subject,date,rdf2,basedir,subdir,stime='00:00:00',etime='23:5
     returndf = returndf.truncate(before=date +' '+ stime, after = date+' '+etime)
     
     return returndf 
-returndf[['x','y','z']].plot() 
 
+
+def test():
     date = '2017-10-01'
     stime='11:00:00';etime='11:59:59' 
-vah0021oct = vu.getVectorsBase(subject,date,rdf2,basedir,subdir,stime='00:00:00',etime='23:59:59') 
-thsd,thrange =vs.getNoise(vah0021oct,subject)
-vs.
+    vah0021oct = vu.getVectorsBase(subject,date,rdf2,basedir,subdir,stime='00:00:00',etime='23:59:59') 
+    thsd,thrange =vs.getNoise(vah0021oct,subject)
+    return 0 
 #
 #    returndf[['x','y','z','datetime']].plot(x='datetime')
 #    tempdf3=tempdf.iloc[:20,:]  

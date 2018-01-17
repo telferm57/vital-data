@@ -23,6 +23,11 @@ import numpy as np
 import scipy.io as spio
 from scipy import stats
 from datetime import datetime
+from vitalanalysis import vs 
+
+#vs import getSMA,getActivityClasses, getVectors
+
+import pickle
 
 
 def createRegistry(basedir):
@@ -202,8 +207,7 @@ def createFilereport(basedir,subdir):
             
 # calculate sma for vah002 
 
-from vitalsensor import getSMA,windows,getActivityClasses, getVectors
-import pickle
+
 
 def multifileSMA(reg,basedir,subdir,subjects='all',windowsz=1,gravity=9.81):
     ''' for files in rdf, perhaps limited to subject , calculate the SMA values per window size (Secs)
@@ -226,7 +230,7 @@ def multifileSMA(reg,basedir,subdir,subjects='all',windowsz=1,gravity=9.81):
             print(type(sensdat))
             #data = df.copy()
             
-            ar, arb, argr, ars, vacc, Vhacc = getVectors(sensdat,
+            ar, arb, argr, ars, vacc, Vhacc = vs.getVectors(sensdat,
                                                          start=0,
                                                          end=-1,
                                                          gvalue=gravity)
@@ -235,7 +239,7 @@ def multifileSMA(reg,basedir,subdir,subjects='all',windowsz=1,gravity=9.81):
             
             filevectors = './data/vectors'
 
-            smaar = getSMA(arb)
+            smaar = vs.getSMA(arb)
             filepath = fileprefix + '_' + subject + '_' + fn
             pickle.dump(smaar, open(filepath,'wb'))
             smafiles.setdefault(subject,[]).append(filepath)
@@ -326,7 +330,7 @@ def multifileActclasses(smafiles,gravity=9.81):
         for filepath in files:
             #filepath = fileprefix + '_' + subject + '_' + fn #TODO make global or whatever
             sma = pickle.load(open(filepath,'rb'))
-            activities = getActivityClasses(sma,g=gravity)
+            activities = vs.getActivityClasses(sma,g=gravity)
             fn = ''.join(filepath.split(sep='_')[2:])
             actfiles.setdefault(subject,{}).update({fn:activities})
             

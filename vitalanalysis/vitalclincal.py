@@ -25,20 +25,21 @@ walks
 pts 
 
 """
-import filehandler as fh
+import vitalanalysis.filehandler as fh
 import imp
 import pandas as pd
 import numpy as np
-import vitalsensor as vs 
-import vitalplot1 as vp1
+import vitalanalysis.vitalsensor as vs 
+import vitalanalysis.vitalplot1 as vp1
+
 import matplotlib.pyplot as plt
 from matplotlib import dates as mdates
 import imp
 from scipy.signal import medfilt
-import vitalcfg as cfg
+import vitalanalysis.cfg as cfg
 
-imp.reload(fh)
-basedir = 'C:/Users/telferm/projects/vital/data/'
+#imp.reload(fh)
+basedir = cfg.basedir
 
 #imp.reload(vs)
 #imp.reload(vp1)
@@ -65,24 +66,19 @@ def magnitude(ar): # assuming x, y, z array
 
 
 def countOneGroups(ar):
-    ''' will count groupsof more than 1 1 in array apassed in 
+    ''' will count groupsof more than 1 '1' in array passed in 
     passes back number of groups 
     test : 
     ar =np.array([1,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,1,0,1,1,1,1,0,1,1,1,1,0,1,1,1])
     '''
     import re
-    ar = 1*ar # convert to int if it already i'n't
+    ar = 1*ar # convert to int if it  i'n't already
     np.sum(ar)
     st = ''.join([str(e) for e in list(ar)])
     onegroups = re.findall('1+',st)
     return len(onegroups)
 
 
-    
-    # regex replace 010 with 0 
-    
-    #regex replace 0* with 0 
-    # regex replace 1* with 1 
 def getSpikes(mag,thresh=50):
     ''' return start and end of 5 - 10 spikes > mag thresh within 3 seconds
     1. get periods of > 50 
@@ -183,111 +179,123 @@ def adjustPressure(newdf):
 #subject = 'vah002'
 
 #subject = 'vah006'
-subject = 'vah006'
-basedir = 'C:/Users/telferm/projects/vital/data/'
-datasubir = 'Batch1/'
-#TODO rdf is created by create file report in filehandler ... but it is an internal
-# variable for that function
-#       imp.reload(vs)
-try:
-    isinstance(rdf,pd.DataFrame)
-except NameError:
-    
-    import pickle
- # FileNotFoundError
-    report, rdf =  pickle.load(open('report_r[df.pickle','rb'))
+def runClinicalReport(subject,plotmag=False):
+    subject = 'vah006'
+    basedir = cfg.basedir
+    #datasubir = 'Batch1/'
+    # rdf is created by create file report in filehandler ... but it is an internal
+    # variable for that function. Takes a fair time to build, so it is pickled 
+    # this code assumes the pickled file is there. #TODO check file exists 
+    #       imp.reload(vs)
+    try:
+        isinstance(rdf,pd.DataFrame)
+    except NameError:
         
-       # report, rdf = fh.createFilereport(basedir,datasubir)
-       # get clinical monitor data , id off body segment, calculate gravity and
-       # off body thresholds 
-dfsensor = vs.getMonitorData(subject,rdf,basedir,adl=0)     
-dfsensor[['x','y','z']].plot()       
-# the following sets the sensor gravity and sensitivity thresholds for 
-# detecting whether onbody or not 
-clinoffsection = {}
-clinoffsection['vah010'] = [90000,120000]
-clinoffsection['vah001'] = [800000,900000]
-clinoffsection['vah002'] = [900000,1000000]
-clinoffsection['vah006'] = [1500000,1600000]
-clinstart = clinoffsection[subject][0]
-clinend = clinoffsection[subject][1]
-vs.getMonitorThresholds(subject,rdf,basedir,clinstart,clinend,dfsensor=False)
-vs.onbodyThresholds 
-pickle.dump(vs.onbodyThresholds,open('monitorthresholds',mode='wb'))
-onbodywindow = 2 # minutes window size 
-       #TODO standardise all times in seconds 
-       
-onBodyPeriods, offBodyPeriods = vs.dissectData(dfsensor,onbodywindow,
-                                               thrsd=thrsd,thrrange=thrrange,
-                                               samplerate=samplerate)
+        import pickle
+     # FileNotFoundError
+        report, rdf =  pickle.load(open(cfg.datadir + 'report_rdf.pickle','rb'))
+            
+           # report, rdf = fh.createFilereport(basedir,datasubir)
+           # get clinical monitor data , id off body segment, calculate gravity and
+           # off body thresholds 
+          # imp.reload(vs)
+    dfsensor = vs.getMonitorData(subject,rdf,basedir,adl=0)     
+    dfsensor[['x','y','z']].plot()       
+    # the following sets the sensor gravity and sensitivity thresholds for 
+    # detecting whether onbody or not 
+    clinoffsection = {} # these have been derived by observation - speeds up the
+    # onbody calculatons below 
+    clinoffsection['vah010'] = [90000,120000]
+    clinoffsection['vah001'] = [800000,900000]
+    clinoffsection['vah002'] = [900000,1000000]
+    clinoffsection['vah006'] = [1500000,1600000]
+    clinstart = clinoffsection[subject][0]
+    clinend = clinoffsection[subject][1]
+    global onbodyThresholds
+    gravity, thrsd, thrrange, samplerate  = vs.getMonitorThresholds(
+                subject,rdf,basedir,clinstart,clinend,dfsensor=False)
 
-for period in onBodyPeriods.values():
-    #TODO modify for multiple periods - not found necessary yet in clinical data 
-    startperiod = int(period[0]*60*onbodywindow*samplerate)
-    endperiod = int((period[1]+1)*60*onbodywindow*samplerate)
-
-    ondata = dfsensor.iloc[startperiod:endperiod,:]
-    odsamplerate  =len(ondata)/(ondata.timestamp.max()-ondata.timestamp.min())
+    # allow 5% 
+    pickle.dump(vs.onbodyThresholds,open(cfg.datadir + 'monitorthresholds',mode='wb'))
+    onbodywindow = 2 # minutes window size 
+           #TODO standardise all times in seconds 
+           
+    onBodyPeriods, offBodyPeriods = vs.dissectData(dfsensor,onbodywindow,
+                                                   thrsd=thrsd,thrrange=thrrange,
+                                                   samplerate=samplerate)
+    odsamplerate = {}
+    ondata = {} # sensor data corresponding to on body periods 
+    for i,period in enumerate(onBodyPeriods.values()):
+        #TODO modify for multiple periods - not found necessary yet in clinical data 
+        # as the clinical examination has always been the first onbody section
+        # probably easier to tie it up with the time ... is that in the clinical results ? 
+        startperiod = int(period[0]*60*onbodywindow*samplerate)
+        endperiod = int((period[1]+1)*60*onbodywindow*samplerate)
     
-samplerate = odsamplerate # can vary by up to one second    
-
-gravlist = vs.getGravity(dfsensor,offBodyPeriods,onbodywindow,samplerate)
-#vvv = np.asarray(gravlist)
-#vvv = vvv[~np.isnan(vvv)]
-#plt.plot(vvv)
-gmean = np.nanmean(gravlist)
-gravity = gmean.copy()
-# note - following vectors are length 7 less than input due to 
-# adjustment for lag after filtering 
-
-ar, arb, argr, ars, vacc, Vhacc, newdf = vs.getVectors(ondata,startperiod,endperiod,gvalue=gravity)
-
-epoch = [newdf.datetime.values[0],newdf.datetime.values[-1]] #TODO these are np format - y?
-mag = vs.magnitude(ar)
-fig1 = plt.figure()
-plt.plot(mag)
-plt.plot(newdf.datetime.values,mag)
-fig1.autofmt_xdate()
-plt.show()
-spikel = getSpikes(mag,thresh=25) # match with sync from annotations
-#should only be 2 spikes - sometimes others are mis identified 
-if len(spikel) >2:
-    print('fix spikel! start and end max ! ')
-if subject in ['vah006','vah001']:
-    del  spikel[1]
-if subject in ['vah002']:
-    del  spikel[0:2]
-    del  spikel[1:3]
-   
-annotations = fh.getAnnotations(subject,basedir) #
-annotations = fixupAnnot(annotations)
-annotations = setAnnotStartTime(newdf,annotations,spikel)
-# we now have annoations with timings aligned with the datetime of the sensor data 
-# get walks - first we need the sma values to then  
-smawindow = int(round(samplerate,0)) # first we need the sma values to then...  
-sma = vs.getSMA(arb, winsize=smawindow)
-#TODO check reasonableness for SMA 
-
-actclasses=vs.getActivityClasses(sma,g=gravity) #... compute the activity classes 
-# sma has one value per window of 1 second. so  timestamps are pos * 50
-smat =  np.arange(0,len(sma),1)*50
-imp.reload(vs)
-
-iasegs = vs.getInactiveSegments(sma,5,1.5)
-#sinfilt[51380:51390]
-#plt.plot(smat,sma)
-# get the walks 
-walks = vs.getWalks(vacc,actclasses,smawindow,epoch,samplerate,accelthov=1.2)  
-# get postural transitions 
-sintheta = vs.getSintheta(ar,sma) # angle of device with vertical 
-
-PTlog = vs.getPT(walks,sintheta,samplerate,angleth=0.30)
-
-PTdetail = vs.getPTdetail(vacc,sintheta,PTlog,smph=0.30)
-# pressure - create normalised 
-
-
-
+        ondata[i] = dfsensor.iloc[startperiod:endperiod,:]
+        odsamplerate[i]  =len(ondata[i])/(ondata[i].timestamp.max()-ondata[i].timestamp.min())
+        print('smaple rate segment ',i,' ',odsamplerate)
+        
+    samplerate = odsamplerate[0] # can vary by up to one second    
+    
+    gravlist = vs.getGravity(dfsensor,offBodyPeriods,onbodywindow,samplerate)
+    #vvv = np.asarray(gravlist)
+    #vvv = vvv[~np.isnan(vvv)]
+    #plt.plot(vvv)
+    gmean = np.nanmean(gravlist)
+    print('g calculated from whole file: ', gravity)
+    print('g calculated from on body section: ', gmean)
+    gravity = gmean.copy()
+    # note - following vectors are length 7 less than input due to 
+    # adjustment for lag after filtering 
+    
+    ar, arb, argr, ars, vacc, Vhacc, newdf = vs.getVectors(ondata[0],startperiod,endperiod,gvalue=gravity)
+    
+    epoch = [newdf.datetime.values[0],newdf.datetime.values[-1]] #TODO these are np format - y?
+    mag = vs.magnitude(ar)
+    if plotmag:
+        fig1 = plt.figure()
+        plt.plot(newdf.datetime.values,mag)
+        fig1.autofmt_xdate()
+        plt.show()
+        
+    spikel = getSpikes(mag,thresh=25) # match with sync from annotations
+    #should only be 2 spikes - sometimes others are mis identified 
+    if len(spikel) >2:
+        print('fix spikel! start and end max ! ')
+    if subject in ['vah006','vah001']:
+        del  spikel[1]
+    if subject in ['vah002']:
+        del  spikel[0:2]
+        del  spikel[1:3]
+       
+    annotations = fh.getAnnotations(subject,basedir) #
+    annotations = fixupAnnot(annotations)
+    annotations = setAnnotStartTime(newdf,annotations,spikel)
+    # we now have annoations with timings aligned with the datetime of the sensor data 
+    # get walks - first we need the sma values to then  
+    smawindow = int(round(samplerate,0)) # first we need the sma values to then...  
+    sma = vs.getSMA(arb, winsize=smawindow)
+    #TODO check reasonableness for SMA 
+    
+    actclasses=vs.getActivityClasses(sma,g=gravity) #... compute the activity classes 
+    # sma has one value per window of 1 second, hence activity class is per 1 second interval
+    
+   # iasegs = vs.getInactiveSegments(sma,5,1.5)
+    #sinfilt[51380:51390]
+    #plt.plot(smat,sma)
+    # get the walks 
+    walks = vs.getWalks(vacc,actclasses,smawindow,epoch,samplerate,accelthov=1.2)  
+    # get postural transitions 
+    sintheta = vs.getSintheta(ar,sma) # angle of device with vertical 
+    
+    PTlog = vs.getPT(walks,sintheta,samplerate,angleth=0.30)
+    
+    PTdetail = vs.getPTdetail(vacc,sintheta,PTlog,smph=0.30)
+    # pressure - create normalised 
+    
+    return walks, sintheta. PTlog, PTdetail
+    
 
 #%% Gait Analysis for each segment in minibest 
 def getNearestWalk(stime,walks):
@@ -299,12 +307,12 @@ def getNearestWalk(stime,walks):
     
     return stimesdiff.index(min(stimesdiff)) + 1 # walks index starts at 1 
    
-imp.reload(vs)
+#imp.reload(vs)
  # imp.reload(mhealthx.extractors.pyGait)
     #subtract this one 
     # get smallest value 
-    
-dfgait,walkerrs = vs.getGaitfeatures(walks,arb,samplerate=samplerate)   
+    walklog,arb,walkno='all',samplerate=50,gravity=9.81,plot_test=False
+dfgait,walkerrs = vs.getGaitfeatures(walks,arb,walkno='all',samplerate=samplerate)   
 gaitcolumns=['subject','test','walkid','start','end',
              'steps1','avg_step_duration','cadence',
              'steps2','sd_step','sd_stride',
@@ -511,6 +519,7 @@ subjects = cfg.subjects
 # create the onbody data frame for use in graphic below 
 ADLactsummary = pd.DataFrame([])
 td2 = timedelta(hours=2)
+
 for subject in subjects:
     # subject = 'vah002'
     ADLactdf = fh.getACTdf(basedir,subdir,subject)
@@ -649,7 +658,7 @@ end = ADLactsummary['end'].values
 
 plotVert(axn[2],x,y,end,linetype='go-')     
        
-      yy = ADLactdf.t.values[0]   
+yy = ADLactdf.t.values[0]   
 f1.suptitle(' monitor wear times')
     
 fig1.autofmt_datesdate()

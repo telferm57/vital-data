@@ -4,15 +4,17 @@ Created on Mon Oct 30 09:12:47 2017
 
 @author: telferm
 """
-import filehandler as fh
-import vitalsensor as vs
+#from vitalanalysis import filehandler as fh
+#from vitalanalysis import vitalsensor as vs
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
 from scipy.signal import medfilt
 from scipy.integrate import cumtrapz 
 import imp 
 #imp.reload(mhealthx.extractors.pyGait)
-from math import floor
+from math import floor#import vitalanalysis.cfg as cfg
+from vitalanalysis import fh
+#import vitalanalysis.filehandler as fh
 import pandas as pd
 from datetime import timedelta
 from mhealthx.extract import run_pyGait
@@ -43,13 +45,12 @@ def butter_bandpass(lowcut, highcut, fs, order=4):
     return b, a
 
 def butter_lowpass_filter(data, cutoff, fs, order=4):
-    from vitalsensor import butter_lowpass
+
     b, a = butter_lowpass(cutoff, fs, order=order)
     y = lfilter(b, a, data)
     return y
 
 def butter_lowpass(cutoff, fs, order=5):
-    from vitalsensor import butter
 
     nyq = 0.5 * fs
     cutf = cutoff / nyq
@@ -57,7 +58,7 @@ def butter_lowpass(cutoff, fs, order=5):
     return b, a
 
 def lpFilter(x,y,z,cutoff,samplerate,order=4):
-    from vitalsensor import butter_lowpass_filter
+
     xfilt = butter_lowpass_filter(x,cutoff,samplerate,order)
     yfilt = butter_lowpass_filter(y,cutoff,samplerate,order)
     zfilt = butter_lowpass_filter(z,cutoff,samplerate,order)
@@ -108,7 +109,7 @@ def getRange(ar):
 
 def getMonitorData(subject,rdf,basedir,adl=0):
     ''' only retrieves the one file for the visit ! not ADL 
-    TODO incorporate into other routines 
+    TODO incorporate into other routines  - is this a filehandler routine ? 
     '''
     print('retreiving clinical monitor data for ',subject)
     fn = rdf[(rdf.subject==subject) & (rdf.adl == adl)].fn.values
@@ -123,6 +124,21 @@ def getMonitorData(subject,rdf,basedir,adl=0):
     return dfsensor
 
 def getMonitorThresholds(subject,rdf,basedir,startsample,endsample,dfsensor=False):  
+    '''
+    Calculate the range and std for the monitor at rest. This is then used in 
+    other functions to calculate the on body/off body time segments 
+    Calculates gravity using getGravity function
+    
+    input: 
+    subject, rdf (sensor file names, subjects, dates) 
+    startsample, endsample - sample number of start/end of inactive period (i.e.
+    when the sensor is off the body )
+    dfsensor - dataframe containing sensor output in which there is an inactve
+                period. If not a dataframe, will the clinical data using
+                getMonitordata 
+    output:
+    sets gobals gravity, onbodyThresholds
+        '''
 #TODO change to get file report and create if necessary
     global onbodyThresholds
     global gravity 
@@ -140,12 +156,13 @@ def getMonitorThresholds(subject,rdf,basedir,startsample,endsample,dfsensor=Fals
     #
     restdata = dfsensor[['x','y','z']][startsample:endsample]
     
-    thrsd, thrrange = vs.getNoise(restdata,subject) # get thresholds for testing sensor off body
+    thrsd, thrrange = getNoise(restdata,subject) # get thresholds for testing sensor off body
     # get gravity value fr this segment 
     onbodyThresholds[subject] = [thrsd, thrrange]
     
-    gravity[subject]=vs.getGravity(restdata,False,0,samplerate)[0] 
-    return 
+    gravity[subject]=getGravity(restdata,False,0,samplerate)[0] 
+    print('gravity for ',subject,' calculated as ',gravity[subject])
+    return  gravity[subject], thrsd, thrrange, samplerateacc
     
 def testOffBody(data, thrsd=0.1,thrrange = 0.5):
    
@@ -161,16 +178,12 @@ def testOffBody(data, thrsd=0.1,thrrange = 0.5):
      
      3mg = 0.03 m/s 50 mg = 0.5 m/s 
      
-     but for smm, finding the sd when stationary is : 
-         vah010 : 0.097 -> 0.11 [smoothed - med filter 0.07,0.08,0.09]
-         range :  x    1.084309
-                 y    0.623075
-                 z    1.245459  
-        smoothed range: sx    0.312020
-                        sy    0.467147
-                        sz    0.469268
-     
-        so for this smm, thresholds are sd < 0.09, range < 0.5
+    n.b. for smm, the sd and range can exceed these values when the device is left on 
+    a table, for example.
+    
+    e.g. for vah006, sd averages 0.094, range averages 0.58 (both values calculate 
+    after medfilt3)
+    
         
      returns 0: on body
              1: off body 
@@ -209,7 +222,7 @@ def getOffBody(ws,data,rate,thrsd=0.1,thrrange=0.5):
     offbody = {}
     allsds = {}
     samplesize = int(round(ws*rate*60,0)) # 6000 per 2  minutes 
-    print('no. 2 minute samples',floor(len(data)/samplesize))
+    print('no. 2 minute samples:',floor(len(data)/samplesize))
     for sampleno in np.arange(floor(len(data)/samplesize)):
         sstart = sampleno*samplesize
         send = sstart+samplesize
@@ -316,7 +329,8 @@ def dissectData(data,onbodywindow=2,thrsd=0.1,thrrange=0.5,samplerate=50):
     return periods, offBodySegments
 
 def getNoise(restdata,subject):
-    from vitalsensor import windows
+    ''' return the mean std and range for 2  minute windows for monitor at rest.
+    values are median filtered prior, as they are in the rest of this app''' 
    
     ar = restdata[['x','y','z']].values 
     ar.shape
@@ -383,7 +397,7 @@ def getVectors(data,start=0,end=-1,gvalue=9.81):
     '''
     #data=walk15.copy()
     from scipy.signal import medfilt
-    from vitalsensor import lpFilter
+
     #gvalue=9.82  # note g can change over time dependent on accelerometer 
     #gvalue=9.74 
     tt = data[start:end].copy()
@@ -827,7 +841,7 @@ def getSintheta(acc,sma):
         Va =  np.mean(acc[startseg:endseg],axis=0)
         # get start of next seg or end of sma 
         if i+1 == len(iasegs):
-            print('end of iasegs detected')
+            print('reached end of iasegs - this s expected')
             endactive = len(acc)
         else: #ends at the beginning of next inactive segment 
             endactive = (iasegs[i+1][0]-1)*50
@@ -845,6 +859,7 @@ def getSintheta(acc,sma):
         sintheta = np.concatenate([sintheta,sinthetaseg])
         
     return sintheta
+
 def synchWalks(walklog,epoch):
     ''' add synched time to walk logs
     input : wlaklog and epoch indicating starttime ''' 
@@ -1047,7 +1062,7 @@ def getGaitfeatures(walklog,arb,walkno='all',samplerate=50,gravity=9.81,plot_tes
         #walklog = walks.copy()
    # del features
     import pandas as pd
-    from vitalsensor import extractGait    
+ 
     from mhealthx.extract import run_pyGait
     import mhealthx.extractors.pyGait
     import mhealthx.signals
@@ -1061,7 +1076,7 @@ def getGaitfeatures(walklog,arb,walkno='all',samplerate=50,gravity=9.81,plot_tes
         if (walkno != 'all') & (walkno != walk): continue
        
         
-        twstart, twend, steps, act,dtime  = detail
+        twstart, twend, steps, act,dtime, stepstats  = detail
   #
   
         
